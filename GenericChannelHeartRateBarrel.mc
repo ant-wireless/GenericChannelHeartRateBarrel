@@ -52,7 +52,7 @@ module GenericChannelHeartRateBarrel {
 	        } else {
                 // Parse the extended device number for the upper nibble
                 deviceNumber = extendedDeviceNumber & 0xFFFF;
-                transmissionType = ((extendedDeviceNumber >> 12) & 0xF0) | 0x05;
+                transmissionType = ((extendedDeviceNumber >> 12) & 0xF0) | 0x01;
 	        }
 	        
 	        if ( isProximityPairing ) {

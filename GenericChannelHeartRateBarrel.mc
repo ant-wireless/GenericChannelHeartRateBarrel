@@ -5,7 +5,7 @@ module GenericChannelHeartRateBarrel {
     const CHANNEL_PERIOD = 8070;    // ANT+ HR Channel Period
     const DEVICE_TYPE = 120;        // ANT+ HR Device Type
     const RADIO_FREQUENCY = 57;     // ANT+ Radio Frequency
-    const SEARCH_TIMEOUT = 2;       // 5 second search timeout
+    const SEARCH_TIMEOUT = 1;       // 2.5 second search timeout
     
     // Message indexes
     const MESSAGE_ID_INDEX = 0;
@@ -81,6 +81,7 @@ module GenericChannelHeartRateBarrel {
                 :messagePeriod => CHANNEL_PERIOD,
                 :radioFrequency => RADIO_FREQUENCY,
                 :searchTimeoutLowPriority => SEARCH_TIMEOUT,
+                :searchTimeoutHighPriority => 0,
                 :searchThreshold => searchThreshold} );
             GenericChannel.setDeviceConfig( deviceCfg );
         }

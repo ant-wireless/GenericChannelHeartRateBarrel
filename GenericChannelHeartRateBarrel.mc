@@ -47,6 +47,7 @@ module GenericChannelHeartRateBarrel {
         hidden var deviceNumber;
         hidden var transmissionType;
         hidden var searchThreshold;
+        hidden var isClosed;
 
         // Initializes AntPlusHeartRateSensor, configures and opens channel
         function initialize( extendedDeviceNumber, isProximityPairing ) {
@@ -54,19 +55,21 @@ module GenericChannelHeartRateBarrel {
             if (extendedDeviceNumber == WILDCARD_PAIRING) {
                 deviceNumber = WILDCARD_PAIRING;
                 transmissionType = WILDCARD_PAIRING;
-	        } else {
+            } else {
                 // Parse the extended device number for the upper nibble
                 deviceNumber = extendedDeviceNumber & 0xFFFF;
                 transmissionType = ((extendedDeviceNumber >> 12) & 0xF0) | 0x01;
-	        }
-	        
-	        if ( isProximityPairing ) {
-	           searchThreshold = CLOSEST_SEARCH_BIN;
-	        } else { 
-	           searchThreshold = WILDCARD_PAIRING;
-	       }
+            }
             
-            searching = true;   // Searching is the default state of the ANT channel
+            if ( isProximityPairing ) {
+               searchThreshold = CLOSEST_SEARCH_BIN;
+            } else { 
+               searchThreshold = WILDCARD_PAIRING;
+           }
+            
+            searching = true;   // Searching is the default state of an open ANT RX_NOT_TX channel
+            
+            isClosed = true;
             
             data = new LegacyHeartData();
             
@@ -93,15 +96,18 @@ module GenericChannelHeartRateBarrel {
         
         // Opens the generic channel
         function open() {
+            isClosed = false;
             GenericChannel.open();
         }
         
         // Closes the generic channel
         function close() {
+            isClosed = true;
             GenericChannel.close();
         }
         
         // Release the generic channel
+        // Once the channel is released it cannot be re-opened or closed again
         function release() {
             GenericChannel.release();
         }
@@ -116,6 +122,16 @@ module GenericChannelHeartRateBarrel {
                 if ( Toybox.Ant.MSG_ID_RF_EVENT == payload[MESSAGE_ID_INDEX] ) {
                     switch(payload[MESSAGE_CODE_INDEX]) {
                         case Toybox.Ant.MSG_CODE_EVENT_CHANNEL_CLOSED:
+                            // Reset HR data after the channel closes
+                            LegacyHeartRateMessage.reset(data);
+                            
+                            // Channel closed, re-open
+                            if(!isClosed) {
+                                open();
+                            }
+                            break;
+                            
+                        case Toybox.Ant.MSG_CODE_EVENT_RX_SEARCH_TIMEOUT:
                             // Expand search radius after each channel close event due to search timeout
                             if ( searchThreshold != 0 ) {
                                 if ( searchThreshold < FARTHEST_SEARCH_BIN ) {
@@ -124,19 +140,17 @@ module GenericChannelHeartRateBarrel {
                                     searchThreshold = WILDCARD_PAIRING;
                                 }
                             }
-                            
-                            // Channel closed, re-open
-                            open();
                             break;
                             
+                        // Drop to search occurs after 2s elapse or 8 RX_FAIL events, whichever comes first
                         case Toybox.Ant.MSG_CODE_EVENT_RX_FAIL_GO_TO_SEARCH:
                             searching = true;
+                            
+                            // Reset HR data after missing over 2s of messages
+                            LegacyHeartRateMessage.reset(data);
                             break;
                     }
                 }
-                
-                // TODO - this is not in the right place.
-                LegacyHeartRateMessage.reset(data);
                 
             } else if ( Toybox.Ant.MSG_ID_BROADCAST_DATA == msg.messageId ) {
                 if ( searching ) {

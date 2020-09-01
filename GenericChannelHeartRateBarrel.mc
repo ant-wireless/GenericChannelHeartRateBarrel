@@ -62,10 +62,10 @@ module GenericChannelHeartRateBarrel {
             }
             
             if ( isProximityPairing ) {
-               searchThreshold = CLOSEST_SEARCH_BIN;
+                searchThreshold = CLOSEST_SEARCH_BIN;
             } else { 
-               searchThreshold = WILDCARD_PAIRING;
-           }
+                searchThreshold = WILDCARD_PAIRING;
+            }
             
             searching = true;   // Searching is the default state of an open ANT RX_NOT_TX channel
             

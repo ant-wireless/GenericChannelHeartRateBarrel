@@ -11,8 +11,9 @@ module GenericChannelHeartRateBarrel {
     const MESSAGE_ID_INDEX = 0;
     const MESSAGE_CODE_INDEX = 1;
     
+    const INVALID_HR = 0;
+    
     class LegacyHeartData {
-        const INVALID_HR = 0;
         
         var computedHeartRate;
         
@@ -26,6 +27,10 @@ module GenericChannelHeartRateBarrel {
         
         static function parse( payload, data ) {
             data.computedHeartRate = payload[COMPUTED_HR_INDEX];
+        }
+        
+        static function reset(data) {
+            data.computedHeartRate = INVALID_HR;
         }
     }
     
@@ -91,6 +96,16 @@ module GenericChannelHeartRateBarrel {
             GenericChannel.open();
         }
         
+        // Closes the generic channel
+        function close() {
+            GenericChannel.close();
+        }
+        
+        // Release the generic channel
+        function release() {
+            GenericChannel.release();
+        }
+        
         // On new ANT Message, parses the message
         // @param msg, a Toybox.Ant.Message object
         function onMessage( msg ) {
@@ -119,6 +134,10 @@ module GenericChannelHeartRateBarrel {
                             break;
                     }
                 }
+                
+                // TODO - this is not in the right place.
+                LegacyHeartRateMessage.reset(data);
+                
             } else if ( Toybox.Ant.MSG_ID_BROADCAST_DATA == msg.messageId ) {
                 if ( searching ) {
                     searching = false;  // ANT channel is now tracking

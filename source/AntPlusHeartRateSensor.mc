@@ -1,64 +1,44 @@
 using Toybox.Ant;
 
 module GenericChannelHeartRateBarrel {
-    // Channel configuration
-    const CHANNEL_PERIOD = 8070;    // ANT+ HR Channel Period
-    const DEVICE_TYPE = 120;        // ANT+ HR Device Type
-    const RADIO_FREQUENCY = 57;     // ANT+ Radio Frequency
-    const SEARCH_TIMEOUT = 1;       // 2.5 second search timeout
-    
-    // Message indexes
-    const MESSAGE_ID_INDEX = 0;
-    const MESSAGE_CODE_INDEX = 1;
-    
-    const INVALID_HR = 0;
-    
-    class LegacyHeartData {
-        
-        var computedHeartRate;
-        
-        function initialize() {
-            computedHeartRate = INVALID_HR;
-        }
-    }
-    
-    class LegacyHeartRateMessage {
-        static const COMPUTED_HR_INDEX = 7;
-        
-        static function parse( payload, data ) {
-            data.computedHeartRate = payload[COMPUTED_HR_INDEX];
-        }
-        
-        static function reset(data) {
-            data.computedHeartRate = INVALID_HR;
-        }
-    }
     
     class AntPlusHeartRateSensor extends Toybox.Ant.GenericChannel {
+	    // Channel configuration
+	    private const CHANNEL_PERIOD = 8070;    // ANT+ HR Channel Period
+	    private const DEVICE_TYPE = 120;        // ANT+ HR Device Type
+	    private const RADIO_FREQUENCY = 57;     // ANT+ Radio Frequency
+	    private const SEARCH_TIMEOUT = 1;       // 2.5 second search timeout
+	    private const DISABLED = 0;
+	    
+	    // Message indexes
+	    private const MESSAGE_ID_INDEX = 0;
+	    private const MESSAGE_CODE_INDEX = 1;
     
-        const WILDCARD_PAIRING = 0;
-        const CLOSEST_SEARCH_BIN = 1;
-        const FARTHEST_SEARCH_BIN = 10;
+        // Proximity bin defines
+        private const WILDCARD_PAIRING = 0;
+        private const CLOSEST_SEARCH_BIN = 1;
+        private const FARTHEST_SEARCH_BIN = 10;
 
-        var chanAssign;
-        var deviceCfg;
-        var searching;
-        var data;
+        // Variables
+        hidden var chanAssign;
+        hidden var deviceCfg;
         hidden var deviceNumber;
         hidden var transmissionType;
         hidden var searchThreshold;
         hidden var isClosed;
+        
+        var data;
 
         // Initializes AntPlusHeartRateSensor, configures and opens channel
+        // @param extendedDeviceNumber, a 20-bit ANT+ defined integer used for identification
+        // @param isProximityPairing, true enables pairing based on signal strength from strongest to weakest
         function initialize( extendedDeviceNumber, isProximityPairing ) {
-            
+        
             if (extendedDeviceNumber == WILDCARD_PAIRING) {
                 deviceNumber = WILDCARD_PAIRING;
                 transmissionType = WILDCARD_PAIRING;
             } else {
-                // Parse the extended device number for the upper nibble
-                deviceNumber = extendedDeviceNumber & 0xFFFF;
-                transmissionType = ((extendedDeviceNumber >> 12) & 0xF0) | 0x01;
+                parseExtendedDeviceNumber( extendedDeviceNumber );
             }
             
             if ( isProximityPairing ) {
@@ -66,10 +46,6 @@ module GenericChannelHeartRateBarrel {
             } else { 
                 searchThreshold = WILDCARD_PAIRING;
             }
-            
-            searching = true;   // Searching is the default state of an open ANT RX_NOT_TX channel
-            
-            isClosed = true;
             
             data = new LegacyHeartData();
             
@@ -89,20 +65,23 @@ module GenericChannelHeartRateBarrel {
                 :messagePeriod => CHANNEL_PERIOD,
                 :radioFrequency => RADIO_FREQUENCY,
                 :searchTimeoutLowPriority => SEARCH_TIMEOUT,
-                :searchTimeoutHighPriority => 0,
+                :searchTimeoutHighPriority => DISABLED,
                 :searchThreshold => searchThreshold} );
             GenericChannel.setDeviceConfig( deviceCfg );
+            
+            // The channel was initialized into a CLOSED state
+            isClosed = true;
         }
         
         // Opens the generic channel
         function open() {
-            isClosed = false;
+            isClosed = false;   // Externally opening the channel means it is no longer CLOSED
             GenericChannel.open();
         }
         
         // Closes the generic channel
         function close() {
-            isClosed = true;
+            isClosed = true;    // Externally closing the channel means it will stay CLOSED
             GenericChannel.close();
         }
         
@@ -120,45 +99,53 @@ module GenericChannelHeartRateBarrel {
             
             if ( Toybox.Ant.MSG_ID_CHANNEL_RESPONSE_EVENT == msg.messageId ) {
                 if ( Toybox.Ant.MSG_ID_RF_EVENT == payload[MESSAGE_ID_INDEX] ) {
+                    // React to changes in the ANT channel state
                     switch(payload[MESSAGE_CODE_INDEX]) {
-                        case Toybox.Ant.MSG_CODE_EVENT_CHANNEL_CLOSED:
-                            // Reset HR data after the channel closes
-                            LegacyHeartRateMessage.reset(data);
                             
-                            // Channel closed, re-open
-                            if(!isClosed) {
-                                open();
-                            }
+                        // Drop to search occurs after 2s elapse or 8 RX_FAIL events, whichever comes first
+                        case Toybox.Ant.MSG_CODE_EVENT_RX_FAIL_GO_TO_SEARCH:
+                            // Reset HR data after missing over 2s of messages
+                            data.reset();
                             break;
                             
+                        // Search timeout occurs after SEARCH_TIMEOUT duration passes without pairing
                         case Toybox.Ant.MSG_CODE_EVENT_RX_SEARCH_TIMEOUT:
-                            // Expand search radius after each channel close event due to search timeout
-                            if ( searchThreshold != 0 ) {
+                            // Only change the search threshold if proximity pairing is enabled
+                            if ( searchThreshold != WILDCARD_PAIRING ) {
+                                // Expand search radius after each channel close event due to search timeout
                                 if ( searchThreshold < FARTHEST_SEARCH_BIN ) {
                                     searchThreshold++;
                                 } else {
+                                    // Pair to any signal strength if we've searched every bin
                                     searchThreshold = WILDCARD_PAIRING;
                                 }
                             }
                             break;
                             
-                        // Drop to search occurs after 2s elapse or 8 RX_FAIL events, whichever comes first
-                        case Toybox.Ant.MSG_CODE_EVENT_RX_FAIL_GO_TO_SEARCH:
-                            searching = true;
+                        // Close event occurs after a search timeout or if it was requested
+                        case Toybox.Ant.MSG_CODE_EVENT_CHANNEL_CLOSED:
+                            // Reset HR data after the channel closes
+                            data.reset();
                             
-                            // Reset HR data after missing over 2s of messages
-                            LegacyHeartRateMessage.reset(data);
+                            // If ANT closed the channel, re-open it to continue pairing
+                            if(!isClosed) {
+                                open();
+                            }
                             break;
                     }
                 }
                 
             } else if ( Toybox.Ant.MSG_ID_BROADCAST_DATA == msg.messageId ) {
-                if ( searching ) {
-                    searching = false;  // ANT channel is now tracking
-                }
-                
-                LegacyHeartRateMessage.parse(payload, data);    // Parse payload into data
+                data.parse( payload );    // Parse payload into data
             }
+        }
+        
+        // Parses the 20-bit extended device number into its two separate components
+        // @param extendedDeviceNumber, a 20-bit ANT+ defined integer used for identification
+        private function parseExtendedDeviceNumber( extendedDeviceNumber ) {
+            // Parse the extended device number for the upper nibble
+            transmissionType = ((extendedDeviceNumber >> 12) & 0xF0) | 0x01;
+            deviceNumber = extendedDeviceNumber & 0xFFFF;
         }
     }
 }

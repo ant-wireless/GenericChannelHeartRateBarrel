@@ -18,6 +18,7 @@ module GenericChannelHeartRateBarrel {
         private const WILDCARD_PAIRING = 0;
         private const CLOSEST_SEARCH_BIN = 1;
         private const FARTHEST_SEARCH_BIN = 10;
+        private const PROXIMITY_DISABLED = 0;
 
         // Variables
         hidden var chanAssign;
@@ -86,6 +87,7 @@ module GenericChannelHeartRateBarrel {
         // Opens the generic channel
         function open() {
             isClosed = false;   // Externally opening the channel means it is no longer CLOSED
+            deviceCfg.searchThreshold = searchThreshold;
             GenericChannel.setDeviceConfig( deviceCfg );
             GenericChannel.open();
         }
@@ -139,14 +141,14 @@ module GenericChannelHeartRateBarrel {
                             // Reset HR data after missing over 2s of messages
                             data.reset();
                             if ( onUpdateCallback != null ) {
-                                onUpdateCallback.invoke(data);
+                                onUpdateCallback.invoke(data.computedHeartRate);
                             }
                             break;
 
                         // Search timeout occurs after SEARCH_TIMEOUT duration passes without pairing
                         case Toybox.Ant.MSG_CODE_EVENT_RX_SEARCH_TIMEOUT:
                             // Only change the search threshold if proximity pairing is enabled
-                            if ( searchThreshold != WILDCARD_PAIRING ) {
+                            if ( searchThreshold != PROXIMITY_DISABLED ) {
                                 // Expand search radius after each channel close event due to search timeout
                                 if ( searchThreshold < FARTHEST_SEARCH_BIN ) {
                                     searchThreshold++;
@@ -154,6 +156,7 @@ module GenericChannelHeartRateBarrel {
                                     // Pair to any signal strength if we've searched every bin
                                     searchThreshold = WILDCARD_PAIRING;
                                 }
+
                             }
                             break;
 
@@ -163,7 +166,7 @@ module GenericChannelHeartRateBarrel {
                             data.reset();
 
                             if ( onUpdateCallback != null ) {
-                                onUpdateCallback.invoke(data);
+                                onUpdateCallback.invoke(data.computedHeartRate);
                             }
 
                             // If ANT closed the channel, re-open it to continue pairing
@@ -178,7 +181,7 @@ module GenericChannelHeartRateBarrel {
                 data.parse( payload );    // Parse payload into data
 
                 if ( onUpdateCallback != null ) {
-                    onUpdateCallback.invoke(data);  // Pass data to callback
+                    onUpdateCallback.invoke(data.computedHeartRate);  // Pass data to callback
                 }
 
                 if ( !isPaired ) {

@@ -25,10 +25,11 @@ module GenericChannelHeartRateBarrel {
         hidden var deviceNumber;
         hidden var transmissionType;
         hidden var searchThreshold;
-        hidden var hrSensorDel;
-        hidden var delDataFunc;
-        hidden var delDevNumFunc;
-        hidden var isClosed;
+        hidden var hrSensorDelegate;
+        hidden var onUpdateCallback;
+        hidden var onPairedCallback;
+        hidden var isClosed;    // Tracks when the app wants us to stay closed
+        hidden var isPaired;    // Paired is an event we only fire once
 
         var data;
 
@@ -75,13 +76,17 @@ module GenericChannelHeartRateBarrel {
             // The channel was initialized into a CLOSED state
             isClosed = true;
 
-            hrSensorDel = null;
-            delDataFunc = null;
+            // The channel has not paired with a device yet
+            isPaired = false;
+
+            hrSensorDelegate = null;
+            onUpdateCallback = null;
         }
 
         // Opens the generic channel
         function open() {
             isClosed = false;   // Externally opening the channel means it is no longer CLOSED
+            GenericChannel.setDeviceConfig( deviceCfg );
             GenericChannel.open();
         }
 
@@ -101,14 +106,14 @@ module GenericChannelHeartRateBarrel {
         // An application can only have 1 registered delegate. Subsequent calls to this function will override the current delegate.
         // Setting this to null will remove any registered delegate.
         function setDelegate( hrSensorDelegate ) {
-            hrSensorDel = hrSensorDelegate;
+            hrSensorDelegate = hrSensorDelegate;
 
-            if ( hrSensorDel != null ) {
-                delDataFunc = hrSensorDel.method(:onHeartRateSensorUpdate);
-                delDevNumFunc = hrSensorDel.method(:onNewExtendedDeviceNumber);
+            if ( hrSensorDelegate != null ) {
+                onUpdateCallback = hrSensorDelegate.method(:onHeartRateSensorUpdate);
+                onPairedCallback = hrSensorDelegate.method(:onHeartRateSensorPaired);
             } else {
-                delDataFunc = null;
-                delDevNumFunc = null;
+                onUpdateCallback = null;
+                onPairedCallback = null;
             }
         }
 
@@ -133,8 +138,8 @@ module GenericChannelHeartRateBarrel {
                         case Toybox.Ant.MSG_CODE_EVENT_RX_FAIL_GO_TO_SEARCH:
                             // Reset HR data after missing over 2s of messages
                             data.reset();
-                            if ( delDataFunc != null ) {
-                                delDataFunc.invoke(data);
+                            if ( onUpdateCallback != null ) {
+                                onUpdateCallback.invoke(data);
                             }
                             break;
 
@@ -157,8 +162,8 @@ module GenericChannelHeartRateBarrel {
                             // Reset HR data after the channel closes
                             data.reset();
 
-                            if ( delDataFunc != null ) {
-                                delDataFunc.invoke(data);
+                            if ( onUpdateCallback != null ) {
+                                onUpdateCallback.invoke(data);
                             }
 
                             // If ANT closed the channel, re-open it to continue pairing
@@ -171,17 +176,19 @@ module GenericChannelHeartRateBarrel {
 
             } else if ( Toybox.Ant.MSG_ID_BROADCAST_DATA == msg.messageId ) {
                 data.parse( payload );    // Parse payload into data
-                if ( delDataFunc != null ) {
-                    delDataFunc.invoke(data);
+
+                if ( onUpdateCallback != null ) {
+                    onUpdateCallback.invoke(data);  // Pass data to callback
                 }
 
-                // If the device number changed, it was because we were wildcarded
-                if ( deviceNumber != msg.deviceNumber && transmissionType != msg.transmissionType ) {
+                if ( !isPaired ) {
+                    isPaired = true;    // Only fire paired event once
+
                     deviceNumber = msg.deviceNumber;
                     transmissionType = msg.transmissionType;
 
-                    if ( delDevNumFunc != null ) {
-                        delDevNumFunc.invoke(getExtendedDeviceNumber());
+                    if ( onPairedCallback != null ) {
+                        onPairedCallback.invoke(getExtendedDeviceNumber());
                     }
                 }
             }

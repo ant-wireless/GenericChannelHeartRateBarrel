@@ -8,7 +8,7 @@ module GenericChannelHeartRateBarrel {
         }
 
         // If the extended device number was wildcarded at initialization this will be called with the paired value.
-        function onNewExtendedDeviceNumber( extendedDeviceNumber ) {
+        function onHeartRateSensorPaired( extendedDeviceNumber ) {
         }
     }
 }

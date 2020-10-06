@@ -4,7 +4,7 @@ module GenericChannelHeartRateBarrel {
     class HeartRateSensorDelegate {
 
         // If the sensor is being tracked this will be called with the latest data.
-        function onHeartRateSensorUpdate( data ) {
+        function onHeartRateSensorUpdate( computedHeartRate ) {
         }
 
         // If the extended device number was wildcarded at initialization this will be called with the paired value.
